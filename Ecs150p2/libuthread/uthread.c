@@ -43,11 +43,11 @@ void uthread_yield(void)
 {
 	// pop out the tcb on top
 	struct uthread_tcb* nextTcb = calloc(1, sizeof(struct uthread_tcb));
-	queue_dequeue(allReadyTcbs, (void**)nextTcb);
+	queue_dequeue(allReadyTcbs, (void**)(&nextTcb));
 	// push the current running tcb to the very bottom of the ready to run queue
 	struct uthread_tcb* currentRunning = uthread_current();
 	currentRunning->tcbState = ready;
-	queue_enqueue(allReadyTcbs, &currentRunning);
+	queue_enqueue(allReadyTcbs, currentRunning);
 	// save a temp for the previous running tcb
 	struct uthread_tcb* previousRunningTcb = currentRunning;
 	// change the nextTcb to current and set its state to running
@@ -84,7 +84,7 @@ int uthread_create(uthread_func_t func, void *arg)
 	createTcb->stackLocation = uthread_ctx_alloc_stack();
 	uthread_ctx_init(&(createTcb->context), createTcb->stackLocation, func, arg);
 	createTcb->tcbState = ready;
-	queue_enqueue(allReadyTcbs, createTcb);
+	queue_enqueue(allReadyTcbs, &createTcb);
 	return createTcb->tid;
 
 }
@@ -93,15 +93,15 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 {
 	/* TODO Phase 2 */
 	// store the current execution process
-	queue_t allReadyTcbs = queue_create();
+	allReadyTcbs = queue_create();
 	struct uthread_tcb* orig = calloc(1,sizeof(struct uthread_tcb));
-	ucontext_t origContext;
 	orig->tid = tidAssignment;
+	ucontext_t origContext;
 	orig->context = origContext;
 	tidAssignment++;
 	current = orig;
-	queue_enqueue(allReadyTcbs,orig);
 	uthread_create(func,arg);
+	
 	
 
 
@@ -109,7 +109,9 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	while(1){
 		
 		// yield will run the next available thread
-		
+		struct uthread_tcb* nextTcb = calloc(1, sizeof(struct uthread_tcb));
+		queue_dequeue(allReadyTcbs, (void**)(&nextTcb));
+		uthread_ctx_switch(&origContext,&(nextTcb->context));
 		uthread_yield();
 		// need to rid of the thread that has been finished
 		// only orig context remains in the queue
