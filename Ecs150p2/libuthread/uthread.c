@@ -11,6 +11,7 @@
 #include "uthread.h"
 #include "queue.h"
 queue_t allReadyTcbs;
+queue_t zombie_queue;
 // the current tcb that is executing
 static struct uthread_tcb* current;
 // states of our tcb
@@ -42,7 +43,7 @@ struct uthread_tcb *uthread_current(void)
 void uthread_yield(void)
 {
 	// pop out the tcb on top
-	struct uthread_tcb* nextTcb = calloc(1, sizeof(struct uthread_tcb));
+	struct uthread_tcb* nextTcb;
 	queue_dequeue(allReadyTcbs, (void**)(&nextTcb));
 	// push the current running tcb to the very bottom of the ready to run queue
 	struct uthread_tcb* currentRunning = uthread_current();
@@ -65,9 +66,15 @@ void uthread_exit(void)
 	struct uthread_tcb* running_Tcb = calloc(1, sizeof(struct uthread_tcb));
 	running_Tcb = current;
 	running_Tcb -> tcbState = zombie;
+	queue_enqueue(zombie_queue,running_Tcb);
 
-	uthread_ctx_destroy_stack(current->stackLocation);
-	free(running_Tcb);
+	//uthread_ctx_destroy_stack(current->stackLocation);
+	//free(running_Tcb);
+	// swap context
+	struct uthread_tcb* next_Tcb = calloc(1,sizeof(struct uthread_tcb));
+	queue_dequeue(allReadyTcbs, (void**)(&next_Tcb));
+	current = next_Tcb;
+	uthread_ctx_switch(&(running_Tcb->context),&(next_Tcb->context));	
 
 
 
@@ -84,9 +91,16 @@ int uthread_create(uthread_func_t func, void *arg)
 	createTcb->stackLocation = uthread_ctx_alloc_stack();
 	uthread_ctx_init(&(createTcb->context), createTcb->stackLocation, func, arg);
 	createTcb->tcbState = ready;
-	queue_enqueue(allReadyTcbs, &createTcb);
+	queue_enqueue(allReadyTcbs, createTcb);
 	return createTcb->tid;
 
+}
+
+void clear_zombie_queue(queue_t zombie, void* data)
+{
+	struct uthread_tcb* node = (struct uthread_tcb*)data;
+	
+	uthread_ctx_destroy_stack(node -> stackLocation);
 }
 
 int uthread_run(bool preempt, uthread_func_t func, void *arg)
@@ -94,6 +108,7 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	/* TODO Phase 2 */
 	// store the current execution process
 	allReadyTcbs = queue_create();
+	zombie_queue = queue_create();
 	struct uthread_tcb* orig = calloc(1,sizeof(struct uthread_tcb));
 	orig->tid = tidAssignment;
 	ucontext_t origContext;
@@ -113,7 +128,9 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 		uthread_yield();
 		// need to rid of the thread that has been finished
 		// only orig context remains in the queue
-		if(queue_length(allReadyTcbs) == 1){
+		if(queue_length(allReadyTcbs) == 0){
+			queue_iterate(zombie_queue, clear_zombie_queue);
+			printf("done\n");
 			return 0;
 		}
 	}
