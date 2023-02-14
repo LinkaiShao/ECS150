@@ -118,7 +118,7 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	uthread_create(func,arg);
 	
 	
-
+	preempt_start(preempt);
 
 	// run the given process
 	while(1){
@@ -131,6 +131,9 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 		if(queue_length(allReadyTcbs) == 0){
 			queue_iterate(zombie_queue, clear_zombie_queue);
 			printf("done\n");
+			if(preempt){
+				preempt_stop();
+			}
 			return 0;
 		}
 	}
