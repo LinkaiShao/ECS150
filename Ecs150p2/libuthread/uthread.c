@@ -109,9 +109,7 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	while(1){
 		
 		// yield will run the next available thread
-		struct uthread_tcb* nextTcb = calloc(1, sizeof(struct uthread_tcb));
-		queue_dequeue(allReadyTcbs, (void**)(&nextTcb));
-		uthread_ctx_switch(&origContext,&(nextTcb->context));
+		
 		uthread_yield();
 		// need to rid of the thread that has been finished
 		// only orig context remains in the queue
