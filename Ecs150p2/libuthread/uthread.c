@@ -74,7 +74,7 @@ void uthread_exit(void)
 	struct uthread_tcb* next_Tcb = calloc(1,sizeof(struct uthread_tcb));
 	queue_dequeue(allReadyTcbs, (void**)(&next_Tcb));
 	current = next_Tcb;
-	uthread_ctx_switch(&(running_Tcb->context),&(next_Tcb->context));	
+	uthread_ctx_switch(&(running_Tcb->context),&(next_Tcb->context));
 
 
 
@@ -99,7 +99,7 @@ int uthread_create(uthread_func_t func, void *arg)
 void clear_zombie_queue(queue_t zombie, void* data)
 {
 	struct uthread_tcb* node = (struct uthread_tcb*)data;
-	
+
 	uthread_ctx_destroy_stack(node -> stackLocation);
 }
 
@@ -116,15 +116,15 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	tidAssignment++;
 	current = orig;
 	uthread_create(func,arg);
-	
-	
+
+
 	preempt_start(preempt);
 
 	// run the given process
 	while(1){
-		
+
 		// yield will run the next available thread
-		
+
 		uthread_yield();
 		// need to rid of the thread that has been finished
 		// only orig context remains in the queue
@@ -143,9 +143,27 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 void uthread_block(void)
 {
 	/* TODO Phase 3 */
+	// same as yield, but does not push it back to the ready to run queue_enqueue
+	// pop out the tcb on top
+	struct uthread_tcb* nextTcb;
+	queue_dequeue(allReadyTcbs, (void**)(&nextTcb));
+	// push the current running tcb to the very bottom of the ready to run queue
+	struct uthread_tcb* currentRunning = uthread_current();
+	// set the currently running to blocked, it will be collected by the semahphore
+	currentRunning->tcbState = blocked;
+
+	// save a temp for the previous running tcb
+	struct uthread_tcb* previousRunningTcb = currentRunning;
+	// change the nextTcb to current and set its state to running
+	current = nextTcb;
+	nextTcb->tcbState = running;
+	uthread_ctx_switch(&(previousRunningTcb->context), &(nextTcb->context));
 }
 
 void uthread_unblock(struct uthread_tcb *uthread)
 {
 	/* TODO Phase 3 */
+	// the thread gets dequeued from the semaphore queue
+	// then it is pushed to the end of the ready to run queue_enqueue
+	queue_enqueue(allReadyTcbs, uthread);
 }
