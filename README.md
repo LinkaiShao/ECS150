@@ -40,4 +40,4 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * Then it creates a tcb that is the first tcb to run
 * **any thread that yields to the mother tcb will result in mother tcb yielding**
 * No more ready to run threads in the global ready queue means we are finished
-
+## Semaphores
