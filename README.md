@@ -65,4 +65,5 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * Block is then called
 * The part after block will only be ran when up is called by another thread
 * Count is then decreased
-* The tricky part here involves the spinlock function and when it should be called
+* The tricky part here involves the spinlock function 
+and when it should be called
