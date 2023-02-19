@@ -41,3 +41,28 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * **any thread that yields to the mother tcb will result in mother tcb yielding**
 * No more ready to run threads in the global ready queue means we are finished
 ## Semaphores
+1. The semaphore object
+* It has a blocked queue, which represents the threads waiting in line
+* It has a count, which represents how many slots are available
+* It has a lock, which represents whether or not the semaphore is locked
+* If the semaphore is locked, the value of the lock is 1
+2. Spinlock
+* This is exactly the same as the spinlock covered in class
+* The reason for this to exist is because of part 4, preemption
+* Since the block and unblock are critical sections, they require locks
+* The locking process involes a loop for setting the lock to 1
+* The unlocking sets the lock to 0
+3. Creating a semaphore
+* The sem create function takes a count as its input
+* We will create an empty queue, for the blocked items in this sempahore
+* Then there is a count
+* At last the lock is set to 0, since no critical section is currently running
+4. Destroying a semaphore
+* free the object
+5. Semaphore down
+* If the count is 0, which means that the thread that calls down needs to wait
+* The semaphore pushing the current thread to its queue
+* Block is then called
+* The part after block will only be ran when up is called by another thread
+* Count is then decreased
+* The tricky part here involves the spinlock function and when it should be called
