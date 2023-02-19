@@ -4,7 +4,6 @@
 3. Semaphore
 4. Preemtion
 5. Testing
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ## User thread library
 1. Uthread class
 * first we need an enum that represents the current state
@@ -65,5 +64,51 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * Block is then called
 * The part after block will only be ran when up is called by another thread
 * Count is then decreased
-* The tricky part here involves the spinlock function 
-and when it should be called
+* The tricky part here involves the spinlock function and when it should be called
+* We first lock the function fromt he start, until when block is called
+* This is because if we don't unlock, then the semaphore will be permanently locked
+* The enqueue into calling the block function is critical
+* The next part is after the block is called
+* Decreasing the count is also a critical section
+* This is because decreasing when it comes to machine language is multiple steps
+* This means that I need to unlock it after the decreasing has been done
+* So in the case when the semaphore is blocked, lock and unlock is called twice
+* When the semaphore is not blocked, lock and unlock is called once
+* Every lock has to match with an unlock
+6. Semaphore up
+* We just dequeue one item from our queue, then plug it into the unblock function
+* The entire portion is critical and no yields are called
+* This means that we only need 1 lock from start to finish
+7. Block
+* Block is similar to yield but a little different
+* Since we don't want the "downed" thread to run again, we push it into semaphore
+* The downed thread is not going to be pushed back into the ready to run queue
+* The context is then switched from the current one to the next available
+* The current context is saved into the semaphore queue
+8. Unblock
+* The parameter represents the head of a semaphore queue
+* This thread is set to ready state and queued to the ready-to-run queue
+## Preemption
+  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+1. Signal handeler
+* This is basically a timer that sets a system timer
+* The system timer will raise a signal when the time has reached
+* The current context is yielded to the next because it has been running too long
+2. Disable
+* Set the signal blocker to the sigset object
+* This means that when sigvtalrm is called, nothing happens
+3. Enable
+* Set the signal unblock to the sigset object
+* This means that when the signal is not blocked
+4. Start
+* If preemption is set, we set the signal action to the signal handeler
+* So when the signal happens, it automaticaly yields the current process to next
+5. Stop
+* The alarm is set to null
+6. Usage in the thread library
+* Both start and stop are ran inside of the run function
+* Preemption starts after the initial set up has been done
+* The initial set up are: making mother thread, queuing the first thread to ready
+* This is because yield cannot be called when there are no threads even made
+* Preemption ends when there are no more items in ready to run
+* This means that the thread runner has finished
