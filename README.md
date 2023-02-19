@@ -7,4 +7,12 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ## User thread library
 1. Uthread class
-* first we need an enum that represents the current state
+ * first we need an enum that represents the current state
+ * then we need the context object, which represents the snapshot of our progress
+ * we need a stack location, which is used for initializing the thread
+ * we need the function, which represents what my current tcb is handeling
+ * we need the argument of the function, we use these for the function
+ * tid and tcb state are not used but I use them for debugging
+ * these are still good to have since they represent the state of the tcb
+2. Current function
+
