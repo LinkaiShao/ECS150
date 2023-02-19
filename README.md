@@ -19,6 +19,9 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * since they don't have direct access to a tcb, but need the current context
 * this is specifically used in the down function in semaphore
 3. Yield function
-* the purpose of the yield function is to put the current running context
-  to the end of the ready to run queue and the front of the ready to run queue
-  is going to run
+* puts the current running context to the end of the ready queue
+* pop the front of the ready queue to become the next running
+* switch the context between the currently running and the next in line
+4. Exit
+* This is called when a tcb finishes executing
+* It is then put into a **zombie queue** (global)
