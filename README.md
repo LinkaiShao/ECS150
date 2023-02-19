@@ -20,5 +20,5 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 * this is specifically used in the down function in semaphore
 3. Yield function
 * the purpose of the yield function is to put the current running context.⋅⋅
-to the end of the ready to run queue and the front of the ready to run queue.⋅⋅
-is going to run
+...to the end of the ready to run queue and the front of the ready to run queue.⋅⋅
+...is going to run
