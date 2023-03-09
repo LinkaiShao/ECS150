@@ -11,6 +11,7 @@
 #define PADDING 10
 #define FATSIZE 2
 #define FAT_E0C 0xE00C
+#define EMPTY_REF 0x0
 /* TODO: Phase 1 */
 struct superblock {
 	uint64_t Signature;
@@ -27,6 +28,11 @@ struct root_nodes {
 	uint16_t index;
 	char padding[10];
 } root_dir[FS_FILE_MAX_COUNT];
+
+struct fd{
+	struct root_nodes* root;
+	size_t offset;
+} file_descriptors[FS_OPEN_MAX_COUNT];
 
 uint16_t* fat_representation;
 int fs_mount(const char *diskname)
@@ -207,21 +213,93 @@ int fs_ls(void)
 int fs_open(const char *filename)
 {
 	/* TODO: Phase 3 */
+	// not mounted
+	if(first_block.Signature == 0){
+		return -1;
+	}
+	// file name invalid
+	if(strlen(filename) > NAME_SIZE || strlen(filename) == 0){
+		return -1;
+	}
+	// check where does this filename exist in our root
+	int root_dir_elements = FS_FILE_MAX_COUNT;
+	int found_root = -1; // where is the root element
+	for(int i = 0 ; i < root_dir_elements; i++){
+		if(strcmp(root_dir[i].file_name,filename) == 0){
+			found_root = i;
+			break;
+		}
+	}
+	// the filename does not exist in the root
+	if(found_root == -1){
+		return -1;
+	}
+	int found_fd = -1;
+	for(int i = 0; i < FS_OPEN_MAX_COUNT; i++){
+		if(file_descriptors[i].root == EMPTY_REF){
+			found_fd = i;
+			file_descriptors[i].root = &root_dir[found_root];
+			file_descriptors[i].offset = 0;
+			break;
+		}
+	}
+	// return -1 if we dont have a single fd that is available
+	// return the fd that is assigned if we can find a fd available
+	return found_fd;
 }
 
+/// @brief checks for 3 things. 1: not mounted 2: oob 3: not open
+/// @param fd 
+/// @return 
+int fd_validation(int fd){
+	if(first_block.Signature == 0){
+		return -1;
+	}
+	// out of bounds
+	if(fd < 0 || fd > FS_OPEN_MAX_COUNT - 1){
+		return -1;
+	}
+	if(file_descriptors[fd].root == EMPTY_REF){
+		return -1;
+	}
+	return 0;
+}
 int fs_close(int fd)
 {
 	/* TODO: Phase 3 */
+	// not mounted
+	if(fd_validation == -1){
+		return -1;
+	}
+	// clear out the reference and the offset
+	file_descriptors[fd].root = EMPTY_REF;
+	file_descriptors[fd].offset = 0;
+	return 0;
+
 }
 
 int fs_stat(int fd)
 {
 	/* TODO: Phase 3 */
+	if(fd_validation == -1){
+		return -1;
+	}
+	return file_descriptors[fd].root->file_size;
 }
 
 int fs_lseek(int fd, size_t offset)
 {
 	/* TODO: Phase 3 */
+	if(fd_validation == -1){
+		return -1;
+	}
+	size_t max_size = fs_stat(fd);
+	// offset too large
+	if(offset > max_size){
+		return -1;
+	}
+	file_descriptors[fd].offset = offset;
+	return 0;
 }
 
 int fs_write(int fd, void *buf, size_t count)
