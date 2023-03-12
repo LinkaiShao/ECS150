@@ -268,7 +268,7 @@ int fs_close(int fd)
 {
 	/* TODO: Phase 3 */
 	// not mounted
-	if(fd_validation == -1){
+	if(fd_validation(fd) == -1){
 		return -1;
 	}
 	// clear out the reference and the offset
@@ -281,7 +281,7 @@ int fs_close(int fd)
 int fs_stat(int fd)
 {
 	/* TODO: Phase 3 */
-	if(fd_validation == -1){
+	if(fd_validation(fd) == -1){
 		return -1;
 	}
 	return file_descriptors[fd].root->file_size;
@@ -290,7 +290,7 @@ int fs_stat(int fd)
 int fs_lseek(int fd, size_t offset)
 {
 	/* TODO: Phase 3 */
-	if(fd_validation == -1){
+	if(fd_validation(fd) == -1){
 		return -1;
 	}
 	size_t max_size = fs_stat(fd);
@@ -309,7 +309,7 @@ uint16_t find_dirty_fat(struct fd this_file){
 	uint16_t current_fat = this_file.root->index;
 	while(1){
 		if(fat_representation[current_fat] == FAT_E0C){
-			return current_fat;
+			return current_fat + first_block.Data_Start;
 		}
 		current_fat = fat_representation[current_fat];
 	}
@@ -318,7 +318,8 @@ uint16_t find_dirty_fat(struct fd this_file){
 uint16_t find_new_block(){
 	for(int i = 0 ; i < sizeof(fat_representation);i++){
 		if(fat_representation[i] == 0){
-			return i;
+			// need to deal with the initial blocks such as root, fat
+			return i + first_block.Data_Start;
 		}
 	}
 	return -1;
@@ -332,6 +333,13 @@ void* create_writeblock (void* buf, size_t count){
 
 int fs_write(int fd, void *buf, size_t count)
 {
+	int valid = fd_validation(fd);
+	if(valid == -1){
+		return -1;
+	}
+	if(buf == NULL){
+		return -1;
+	}
 	/* TODO: Phase 4 */
 	struct fd this_file = file_descriptors[fd];
 	// need to find where the first block available is
@@ -342,27 +350,36 @@ int fs_write(int fd, void *buf, size_t count)
 	uint16_t left_over_offset = BLOCK_SIZE - this_file.offset%BLOCK_SIZE;
 	void* dirty_block = malloc(BLOCK_SIZE*sizeof(char));
 	block_read(first_write_fat,dirty_block);
+	// the left over of the dirty fat block is enough
 	if(left_over_offset >= count){
 		// we only need to deal with the dirty fat block
-		memcpy(dirty_block + this_file.offset, buf_cpy, count);
+		memcpy(dirty_block + this_file.offset%BLOCK_SIZE, buf_cpy, count);
 		block_write(first_write_fat,dirty_block);
 		// set the offset
+		this_file.root->file_size += count;
 		fs_lseek(fd,this_file.offset + count);
-		return 0;
+		
+		return count;
 	}
-	memcpy(dirty_block + this_file.offset, buf_cpy, left_over_offset);
+	int written = 0;
+	memcpy(dirty_block + this_file.offset%BLOCK_SIZE, buf_cpy, left_over_offset);
+	block_write(first_write_fat,dirty_block);
 	buf_cpy += left_over_offset;
+	written += left_over_offset;
 	// keep track of how much data we need to write
 	size_t leftover_count = count;
 	leftover_count -= left_over_offset;
 	// the most recent block that we have wrote to
 	uint16_t last_block = first_write_fat;
 	while(leftover_count > 0){
-		uint16_t available_fat = find_new_block();
+		uint16_t available_fat = find_new_block(); 
 		if(available_fat == -1){
 			// no more blocks available
-			this_file.root->index = BLOCK_SIZE;
-			return 0;
+			// update the offset
+			this_file.root->file_size += written;
+			fs_lseek(fd,this_file.offset + written);
+			
+			return written;
 		}
 		// we have a block, now write into it
 		fat_representation[last_block] = available_fat;
@@ -372,14 +389,19 @@ int fs_write(int fd, void *buf, size_t count)
 			void* new_block = create_writeblock(buf_cpy,leftover_count);
 			// write it onto the data block
 			block_write(available_fat,new_block);
-			fs_lseek(fd,this_file.offset + leftover_count);
-			return;
+			written += leftover_count;
+			this_file.root->file_size += written;
+			fs_lseek(fd,this_file.offset + written);
+			
+			return written;
 		}
 		// fresh block, we need to fill all of it
 		void* new_block = create_writeblock(buf_cpy,BLOCK_SIZE);
 		block_write(available_fat,new_block);
+		written += BLOCK_SIZE;
+		// update the buffer to next location
 		buf_cpy += BLOCK_SIZE;
-		fs_lseek(fd,this_file.offset + BLOCK_SIZE);
+		
 	}
 	
 }
@@ -393,11 +415,18 @@ uint16_t find_first_read(struct fd this_file, int* offset_left) {
 		current_fat = fat_representation[current_fat];
 	}
 	*offset_left = offset;
-	return current_fat;
+	return current_fat + first_block.Data_Start;
 }
 
 int fs_read(int fd, void *buf, size_t count)
 {
+	int valid = fd_validation(fd);
+	if(valid == -1){
+		return -1;
+	}
+	if(buf == NULL){
+		return -1;
+	}
 	void *orig_buf = buf;
 	/* TODO: Phase 4 */
 	size_t count_left = count;
@@ -415,7 +444,7 @@ int fs_read(int fd, void *buf, size_t count)
 	buf += (BLOCK_SIZE - offset_left);
 	count_left -= (BLOCK_SIZE - offset_left);
 	// move current fat to next
-	current_fat = fat_representation[current_fat];
+	current_fat = fat_representation[current_fat] + first_block.Data_Start;
 	while(count_left > 0){
 		void* new_block = malloc(BLOCK_SIZE*sizeof(char));
 		block_read(current_fat,new_block);
