@@ -382,7 +382,8 @@ int fs_write(int fd, void *buf, size_t count)
 			return written;
 		}
 		// we have a block, now write into it
-		fat_representation[last_block] = available_fat;
+		// need to account for fake fat vs real fat
+		fat_representation[last_block] = available_fat - first_block.Data_Start;
 		fat_representation[available_fat] = FAT_E0C;
 		if(leftover_count <= BLOCK_SIZE){
 			// just write to this block and then we done
@@ -401,6 +402,7 @@ int fs_write(int fd, void *buf, size_t count)
 		written += BLOCK_SIZE;
 		// update the buffer to next location
 		buf_cpy += BLOCK_SIZE;
+		leftover_count -= BLOCK_SIZE;
 		
 	}
 	
