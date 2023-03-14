@@ -10,7 +10,7 @@
 #define NAME_SIZE 16
 #define PADDING 10
 #define FATSIZE 2
-#define FAT_E0C 0xE00C
+#define FAT_E0C 0xFFFF
 #define EMPTY_REF 0x0
 /* TODO: Phase 1 */
 struct superblock {
@@ -56,7 +56,7 @@ int fs_mount(const char *diskname)
 		}
 	}
 	
-	fat_representation = (uint16_t*) malloc(first_block.Data_Blocks_Amount * sizeof(uint16_t));
+	fat_representation = malloc(first_block.Data_Blocks_Amount * sizeof(uint16_t));
 	// need to match the fats and put them into fat_representation
 	int block_track = 1;
 	int offset = 0;
@@ -81,9 +81,9 @@ int fs_umount(void)
 		}
 		offset += first_block.Data_Blocks_Amount/first_block.Fat_Blocks;
 	}
-	free(fat_representation);
 	// load in the root dir
 	int root_location = 1 + first_block.Fat_Blocks;
+	free(fat_representation);
 	block_write(root_location,root_dir);
 	block_disk_close();
 }
@@ -102,7 +102,7 @@ int fs_info(void)
 	// how many data blocks there are
 	printf("data_blk_count = %d\n",first_block.Block_Amounts - first_block.Fat_Blocks - 1 - 1);
 	// how many are free(fat)
-	int total_fat = BLOCK_SIZE/FATSIZE*first_block.Fat_Blocks;
+	int total_fat = first_block.Block_Amounts - first_block.Fat_Blocks - 1 - 1;
 	int free_fat = 0;
 	for(int i = 0 ; i < total_fat;i++){
 		if(*(fat_representation + i) == 0){
@@ -315,8 +315,8 @@ uint16_t find_dirty_fat(struct fd this_file){
 	}
 }
 
-uint16_t find_new_block(){
-	for(int i = 0 ; i < sizeof(fat_representation);i++){
+int find_new_block(){
+	for(int i = 0 ; i < first_block.Data_Blocks_Amount;i++){
 		if(fat_representation[i] == 0){
 			// need to deal with the initial blocks such as root, fat
 			return i + first_block.Data_Start;
@@ -358,21 +358,25 @@ int fs_write(int fd, void *buf, size_t count)
 		// set the offset
 		this_file.root->file_size += count;
 		fs_lseek(fd,this_file.offset + count);
-		
+		free(dirty_block);
 		return count;
 	}
 	int written = 0;
 	memcpy(dirty_block + this_file.offset%BLOCK_SIZE, buf_cpy, left_over_offset);
 	block_write(first_write_fat,dirty_block);
+	free(dirty_block);
 	buf_cpy += left_over_offset;
 	written += left_over_offset;
 	// keep track of how much data we need to write
 	size_t leftover_count = count;
 	leftover_count -= left_over_offset;
 	// the most recent block that we have wrote to
+	// did not account for the datastart
 	uint16_t last_block = first_write_fat;
 	while(leftover_count > 0){
-		uint16_t available_fat = find_new_block(); 
+		// find an available block
+		// did not account for datastart
+		int available_fat = find_new_block(); 
 		if(available_fat == -1){
 			// no more blocks available
 			// update the offset
@@ -383,13 +387,14 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 		// we have a block, now write into it
 		// need to account for fake fat vs real fat
-		fat_representation[last_block] = available_fat - first_block.Data_Start;
-		fat_representation[available_fat] = FAT_E0C;
+		fat_representation[last_block - first_block.Data_Start ] = available_fat - first_block.Data_Start;
+		fat_representation[available_fat - first_block.Data_Start] = FAT_E0C;
 		if(leftover_count <= BLOCK_SIZE){
-			// just write to this block and then we done
+			// just write to this block and then we dones
 			void* new_block = create_writeblock(buf_cpy,leftover_count);
 			// write it onto the data block
 			block_write(available_fat,new_block);
+			free(new_block);
 			written += leftover_count;
 			this_file.root->file_size += written;
 			fs_lseek(fd,this_file.offset + written);
@@ -399,10 +404,12 @@ int fs_write(int fd, void *buf, size_t count)
 		// fresh block, we need to fill all of it
 		void* new_block = create_writeblock(buf_cpy,BLOCK_SIZE);
 		block_write(available_fat,new_block);
+		free(new_block);
 		written += BLOCK_SIZE;
 		// update the buffer to next location
 		buf_cpy += BLOCK_SIZE;
 		leftover_count -= BLOCK_SIZE;
+		last_block = available_fat;
 		
 	}
 	
@@ -432,40 +439,61 @@ int fs_read(int fd, void *buf, size_t count)
 	void *orig_buf = buf;
 	/* TODO: Phase 4 */
 	size_t count_left = count;
+	int file_size_temp = file_descriptors[fd].root->file_size;
+	file_size_temp -= file_descriptors[fd].offset;
+	if(file_size_temp <= 0) {
+		// offset points to beyond the end of the file
+		return 0;
+	}
 	int offset_left = 0;
+	// the fat that we are currently reading, not accounting for data start
 	uint16_t current_fat = find_first_read(file_descriptors[fd], &offset_left);
 	void* dirty_block = malloc(BLOCK_SIZE*sizeof(char));
 	block_read(current_fat,dirty_block);
 	// if whatever is left over of the dirty block is greater than count
 	if(count < BLOCK_SIZE - offset_left){
-		memcpy(buf,dirty_block + offset_left, count);
+		// 2 cases
+		// 1: whatever is left of the block we want
+		// 2: the block is not fully written
+		if(file_size_temp <= count){
+			memcpy(buf,dirty_block + offset_left, file_size_temp);
+		}
+		else{
+			memcpy(buf,dirty_block + offset_left, count);
+		}
 		buf = orig_buf;
-		return 0;
+		return count;
 	}
 	memcpy(buf,dirty_block + offset_left, BLOCK_SIZE - offset_left);
 	buf += (BLOCK_SIZE - offset_left);
 	count_left -= (BLOCK_SIZE - offset_left);
+	int total_read = BLOCK_SIZE - offset_left;
 	// move current fat to next
-	current_fat = fat_representation[current_fat] + first_block.Data_Start;
+	current_fat = fat_representation[current_fat - first_block.Data_Start] + first_block.Data_Start;
 	while(count_left > 0){
+		if(current_fat == FAT_E0C){
+			// the amount we want to read > the amount of data we actually have
+			// set the count_left to the amount that we have left in the file
+			if(count_left > file_size_temp){
+				count_left = file_size_temp;
+			}
+		}
 		void* new_block = malloc(BLOCK_SIZE*sizeof(char));
 		block_read(current_fat,new_block);
 		if(count_left <= BLOCK_SIZE){
 			// read the amount we need and return
 			memcpy(buf,new_block,count_left);
 			buf = orig_buf;
-			return 0;
+			total_read += count_left;
+			return total_read;
 		}
 		// arrive here if the count that we got left > a whole block
 		memcpy(buf, new_block, BLOCK_SIZE);
 		buf += BLOCK_SIZE;
 		count_left -= BLOCK_SIZE;
-		current_fat = fat_representation[current_fat];
-		if(current_fat == FAT_E0C){
-			// the amount we want to read > the amount of data we actually have
-			buf = orig_buf;
-			return 0;
-		}
+		file_size_temp -= BLOCK_SIZE;
+		current_fat = fat_representation[current_fat - first_block.Data_Start] + first_block.Data_Start;
+		total_read += BLOCK_SIZE;
 	}
 }
 
