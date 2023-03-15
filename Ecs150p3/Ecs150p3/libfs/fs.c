@@ -8,7 +8,6 @@
 #include "fs.h"
 #define BLOCK_SIZE 4096
 #define NAME_SIZE 16
-#define PADDING 10
 #define FATSIZE 2
 #define FAT_E0C 0xFFFF
 #define EMPTY_REF 0x0
@@ -29,15 +28,14 @@ struct root_nodes {
 	char padding[10];
 } root_dir[FS_FILE_MAX_COUNT];
 
-struct fd{
+struct fd {
 	struct root_nodes* root;
 	size_t offset;
 } file_descriptors[FS_OPEN_MAX_COUNT];
 
 uint16_t* fat_representation;
-int fs_mount(const char *diskname)
-{
-	if(block_disk_open(diskname) == -1){
+int fs_mount(const char *diskname) {
+	if(block_disk_open(diskname) == -1) {
 		// opening failed
 		return -1;
 	}
@@ -48,20 +46,18 @@ int fs_mount(const char *diskname)
 	for(int i = 0; i < 8; i++) {
 		sig_parsed[i] = (first_block.Signature >> (i*8)) & 0xFF;
 	}
-	
 	char check[] = "ECS150FS";
-	for(int i = 0 ; i < 8 ; i++){
+	for(int i = 0 ; i < 8 ; i++) {
 		if(sig_parsed[i] != check[i]){
 			return -1;
 		}
 	}
-	
 	fat_representation = malloc(first_block.Data_Blocks_Amount * sizeof(uint16_t));
 	// need to match the fats and put them into fat_representation
 	int block_track = 1;
 	int offset = 0;
-	for(block_track; block_track < 1 + first_block.Fat_Blocks; block_track++){
-		if(block_read(block_track,&fat_representation[offset]) == -1){
+	for(block_track; block_track < 1 + first_block.Fat_Blocks; block_track++) {
+		if(block_read(block_track,&fat_representation[offset]) == -1) {
 			return -1;
 		}
 		offset += first_block.Data_Blocks_Amount/first_block.Fat_Blocks;
@@ -71,10 +67,15 @@ int fs_mount(const char *diskname)
 	
 }
 
-int fs_umount(void)
-{
+int fs_umount(void) {
 	int offset = 0;
 	/* TODO: Phase 1 */
+	// check if there is an fd open
+	for(int i = 0; i < FS_OPEN_MAX_COUNT; i++){
+		if(file_descriptors[i].root != EMPTY_REF){
+			return -1;
+		}
+	}
 	for(int i = 1 ; i < 1 + first_block.Fat_Blocks; i++){
 		if(block_write(i,&fat_representation[offset]) == -1){
 			return -1;
@@ -88,23 +89,26 @@ int fs_umount(void)
 	block_disk_close();
 }
 
-int fs_info(void)
-{
+int fs_info(void) {
+	// if no fs is mounted
+	if(first_block.Signature == 0){
+		return -1;
+	}
 	printf("FS Info\n");
 	// total blocks
-	printf("total_blk_count = %d\n",first_block.Block_Amounts);
+	printf("total_blk_count=%d\n", first_block.Block_Amounts);
 	// fat blocks
-	printf("fat_blk_count = %d\n", first_block.Fat_Blocks);
+	printf("fat_blk_count=%d\n", first_block.Fat_Blocks);
 	// which block is the rdir
-	printf("rdir location = %d\n", first_block.Root_Dir);
+	printf("rdir location=%d\n", first_block.Root_Dir);
 	// where is data start
-	printf("data_blk = %d\n",first_block.Data_Start);
+	printf("data_blk=%d\n",first_block.Data_Start);
 	// how many data blocks there are
-	printf("data_blk_count = %d\n",first_block.Block_Amounts - first_block.Fat_Blocks - 1 - 1);
+	printf("data_blk_count=%d\n",first_block.Block_Amounts - first_block.Fat_Blocks - 1 - 1);
 	// how many are free(fat)
 	int total_fat = first_block.Block_Amounts - first_block.Fat_Blocks - 1 - 1;
 	int free_fat = 0;
-	for(int i = 0 ; i < total_fat;i++){
+	for(int i = 0 ; i < total_fat;i++) {
 		if(*(fat_representation + i) == 0){
 			free_fat += 1;
 		}
@@ -114,30 +118,52 @@ int fs_info(void)
 	// how many free rootdirs there are
 	int root_dir_elements = FS_FILE_MAX_COUNT;
 	int free_dir = 0;
-	for(int i = 0; i < root_dir_elements;i++){
+	for(int i = 0; i < root_dir_elements;i++) {
 		if(root_dir[i].file_name[0] == '\0'){
 			free_dir += 1;
 		}
 	}
 	printf("rdir_free_ratio = %d",free_dir);
 	printf("/%d\n",root_dir_elements);
-
 }
 
-int fs_create(const char *filename)
-{
+int fs_create(const char *filename) {
 	/* TODO: Phase 2 */
 	// first find an available root dir
+	// not mounted
+	if(first_block.Signature == 0){
+		return -1;
+	}
+	// name invalid or too long
+	if(strlen(filename) == 0 || strlen(filename) > NAME_SIZE)
+	{
+		return -1;
+	}
+	// max files have been created
 	int root_dir_elements = FS_FILE_MAX_COUNT;
-	for(int i = 0; i < root_dir_elements;i++){
+	int free_dir = 0;
+	for(int i = 0; i < root_dir_elements;i++) {
+		if(root_dir[i].file_name[0] == '\0'){
+			free_dir += 1;
+		}
+		// name already exists
+		if(strcmp(root_dir[i].file_name,filename) == 0) {
+			return -1;
+		}
+	}
+	if(free_dir == 0){
+		return -1;
+	}
+	root_dir_elements = FS_FILE_MAX_COUNT;
+	for(int i = 0; i < root_dir_elements; i++){
 		if(root_dir[i].file_name[0] == '\0'){
 			struct root_nodes* this_root = &root_dir[i];
 			strncpy(this_root->file_name,filename,sizeof(filename));
 			this_root->file_size = 0;
 			// need to find a fat block
 			int total_fat = BLOCK_SIZE/FATSIZE*first_block.Fat_Blocks;
-			for(int j = 0 ; j < total_fat;j++){
-				if(*(fat_representation + j) == 0){
+			for(int j = 0 ; j < total_fat;j++) {
+				if(*(fat_representation + j) == 0) {
 					// we found a free fat block that we can allocate
 					this_root->index = j;
 					// change the fat's value from 0 to FAT_E0C
@@ -151,16 +177,16 @@ int fs_create(const char *filename)
 }
 /// @brief clear the directory, set the index to 0, set the name to empty, set size to 0
 /// @param this_root 
-void clear_directory (struct root_nodes* this_root){
+void clear_directory (struct root_nodes* this_root) {
 	this_root -> index = 0;
 	this_root -> file_size = 0;
-	for(int i = 0 ; i < sizeof(this_root ->file_name); i++){
+	for(int i = 0 ; i < (int)sizeof(this_root ->file_name); i++){
 		(this_root -> file_name)[i] = '\000';
 	}
 	return;
 }
 // run through the fat and clear every item the fat is conencted to
-void clear_fat(int head){
+void clear_fat(int head) {
 	int fat_location = head;
 	while(1){
 		uint16_t next_fat = *(fat_representation + fat_location);
@@ -170,11 +196,39 @@ void clear_fat(int head){
 		}
 	}
 }
-int fs_delete(const char *filename)
-{
-	/* TODO: Phase 2 */
-	// firsat find the file in the rootdir
+int fs_delete(const char *filename) {
+	// not opened
+	if(first_block.Signature == 0){
+		return -1;
+	}
+	// name invalid or too long
+	if(strlen(filename) == 0 || strlen(filename) > NAME_SIZE)
+	{
+		return -1;
+	}
+	// check for file name exists
 	int root_dir_elements = FS_FILE_MAX_COUNT;
+	int free_dir = 0;
+	int found_file = -1;
+	for(int i = 0; i < root_dir_elements;i++) {
+		// name exists
+		if(strcmp(root_dir[i].file_name,filename) == 0) {
+			found_file = 1;
+			break;
+		}
+	}
+	if(found_file == -1){
+		return -1;
+	}
+	// check if the file is currently opened
+	for(int i = 0; i < FS_OPEN_MAX_COUNT; i++){
+		if(strcmp(file_descriptors[i].root->file_name, filename) == 0){
+			return -1;
+		}
+	}
+	/* TODO: Phase 2 */
+	// first find the file in the rootdir
+	root_dir_elements = FS_FILE_MAX_COUNT;
 	for(int i = 0; i < root_dir_elements;i++){
 		if(strncmp(root_dir[i].file_name,filename,sizeof(root_dir[i].file_name)) == 0){
 			struct root_nodes* this_root = &root_dir[i];
@@ -190,8 +244,11 @@ int fs_delete(const char *filename)
 	return -1;
 }
 
-int fs_ls(void)
-{
+int fs_ls(void) {
+	// not mounted
+	if(first_block.Signature == 0){
+		return -1;
+	}
 	printf("FS Ls:\n");
 	int root_dir_elements = FS_FILE_MAX_COUNT;
 	int found = 0;
@@ -199,8 +256,8 @@ int fs_ls(void)
 		if(root_dir[i].file_name[0] != '\0'){
 			found = 1;
 			printf("file: ");
-			printf("%s ",root_dir[i].file_name);
-			printf("size: %d ", root_dir[i].file_size);
+			printf("%s, ",root_dir[i].file_name);
+			printf("size: %d, ", root_dir[i].file_size);
 			printf("data_blk: %d\n", root_dir[i].index);
 		}
 	}
@@ -210,8 +267,7 @@ int fs_ls(void)
 	return 0;
 }
 
-int fs_open(const char *filename)
-{
+int fs_open(const char *filename) {
 	/* TODO: Phase 3 */
 	// not mounted
 	if(first_block.Signature == 0){
@@ -264,8 +320,7 @@ int fd_validation(int fd){
 	}
 	return 0;
 }
-int fs_close(int fd)
-{
+int fs_close(int fd){
 	/* TODO: Phase 3 */
 	// not mounted
 	if(fd_validation(fd) == -1){
@@ -275,11 +330,9 @@ int fs_close(int fd)
 	file_descriptors[fd].root = EMPTY_REF;
 	file_descriptors[fd].offset = 0;
 	return 0;
-
 }
 
-int fs_stat(int fd)
-{
+int fs_stat(int fd) {
 	/* TODO: Phase 3 */
 	if(fd_validation(fd) == -1){
 		return -1;
@@ -287,8 +340,7 @@ int fs_stat(int fd)
 	return file_descriptors[fd].root->file_size;
 }
 
-int fs_lseek(int fd, size_t offset)
-{
+int fs_lseek(int fd, size_t offset){
 	/* TODO: Phase 3 */
 	if(fd_validation(fd) == -1){
 		return -1;
@@ -307,11 +359,14 @@ int fs_lseek(int fd, size_t offset)
 /// @return dirty fat offset is where the offset in the dirty fat
 uint16_t find_dirty_fat(struct fd this_file){
 	uint16_t current_fat = this_file.root->index;
+	int offset = this_file.offset;
+	offset -= BLOCK_SIZE;
 	while(1){
-		if(fat_representation[current_fat] == FAT_E0C){
+		if(offset < 0){
 			return current_fat + first_block.Data_Start;
 		}
 		current_fat = fat_representation[current_fat];
+		offset -= BLOCK_SIZE;
 	}
 }
 
@@ -331,8 +386,12 @@ void* create_writeblock (void* buf, size_t count){
 	return write;
 }
 
-int fs_write(int fd, void *buf, size_t count)
-{
+// how much space we have allocated 
+int allocated_space (int size){
+	return (BLOCK_SIZE - size%BLOCK_SIZE) + size/BLOCK_SIZE*BLOCK_SIZE;
+}
+
+int fs_write(int fd, void *buf, size_t count){
 	int valid = fd_validation(fd);
 	if(valid == -1){
 		return -1;
@@ -367,22 +426,30 @@ int fs_write(int fd, void *buf, size_t count)
 	free(dirty_block);
 	buf_cpy += left_over_offset;
 	written += left_over_offset;
+	// track whether if we need to allocate new block or use the old
+	int left_over_track = allocated_space(this_file.root->file_size) - this_file.offset;
 	// keep track of how much data we need to write
 	size_t leftover_count = count;
 	leftover_count -= left_over_offset;
+	left_over_track -= left_over_offset;
 	// the most recent block that we have wrote to
 	// did not account for the datastart
 	uint16_t last_block = first_write_fat;
 	while(leftover_count > 0){
 		// find an available block
 		// did not account for datastart
-		int available_fat = find_new_block(); 
+		int available_fat = -1;
+		if(left_over_track > 0){
+			available_fat = fat_representation[last_block];
+		}
+		else{
+			available_fat = find_new_block(); 
+		}
 		if(available_fat == -1){
 			// no more blocks available
 			// update the offset
 			this_file.root->file_size += written;
 			fs_lseek(fd,this_file.offset + written);
-			
 			return written;
 		}
 		// we have a block, now write into it
@@ -408,11 +475,10 @@ int fs_write(int fd, void *buf, size_t count)
 		written += BLOCK_SIZE;
 		// update the buffer to next location
 		buf_cpy += BLOCK_SIZE;
+		left_over_track -= BLOCK_SIZE;
 		leftover_count -= BLOCK_SIZE;
 		last_block = available_fat;
-		
 	}
-	
 }
 
 uint16_t find_first_read(struct fd this_file, int* offset_left) {
@@ -427,8 +493,7 @@ uint16_t find_first_read(struct fd this_file, int* offset_left) {
 	return current_fat + first_block.Data_Start;
 }
 
-int fs_read(int fd, void *buf, size_t count)
-{
+int fs_read(int fd, void *buf, size_t count){
 	int valid = fd_validation(fd);
 	if(valid == -1){
 		return -1;
@@ -451,11 +516,11 @@ int fs_read(int fd, void *buf, size_t count)
 	void* dirty_block = malloc(BLOCK_SIZE*sizeof(char));
 	block_read(current_fat,dirty_block);
 	// if whatever is left over of the dirty block is greater than count
-	if(count < BLOCK_SIZE - offset_left){
+	if((int)count < BLOCK_SIZE - offset_left){
 		// 2 cases
 		// 1: whatever is left of the block we want
 		// 2: the block is not fully written
-		if(file_size_temp <= count){
+		if(file_size_temp <= (int)count){
 			memcpy(buf,dirty_block + offset_left, file_size_temp);
 		}
 		else{
@@ -474,7 +539,7 @@ int fs_read(int fd, void *buf, size_t count)
 		if(current_fat == FAT_E0C){
 			// the amount we want to read > the amount of data we actually have
 			// set the count_left to the amount that we have left in the file
-			if(count_left > file_size_temp){
+			if((int)count_left > file_size_temp){
 				count_left = file_size_temp;
 			}
 		}
