@@ -52,7 +52,9 @@ int fs_mount(const char *diskname) {
 			return -1;
 		}
 	}
-	fat_representation = malloc(first_block.Data_Blocks_Amount * sizeof(uint16_t));
+	
+	fat_representation = malloc(first_block.Fat_Blocks * BLOCK_SIZE * sizeof(uint16_t));
+	
 	// need to match the fats and put them into fat_representation
 	int block_track = 1;
 	int offset = 0;
