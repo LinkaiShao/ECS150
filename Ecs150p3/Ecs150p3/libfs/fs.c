@@ -103,7 +103,7 @@ int fs_info(void) {
 	// fat blocks
 	printf("fat_blk_count=%d\n", first_block.Fat_Blocks);
 	// which block is the rdir
-	printf("rdir location=%d\n", first_block.Root_Dir);
+	printf("rdir_blk=%d\n", first_block.Root_Dir);
 	// where is data start
 	printf("data_blk=%d\n",first_block.Data_Start);
 	// how many data blocks there are
