@@ -58,7 +58,7 @@ int fs_mount(const char *diskname) {
 	// need to match the fats and put them into fat_representation
 	int block_track = 1;
 	int offset = 0;
-	for(block_track; block_track < 1 + first_block.Fat_Blocks; block_track++) {
+	for(block_track = 1; block_track < 1 + first_block.Fat_Blocks; block_track++) {
 		if(block_read(block_track,&fat_representation[offset]) == -1) {
 			return -1;
 		}
